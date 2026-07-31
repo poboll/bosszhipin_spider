@@ -1,0 +1,4 @@
+lxml>=5.0,<7
+openpyxl>=3.1,<4
+pandas>=2.0,<4
+pyppeteer>=2.0,<3

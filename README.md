@@ -1,260 +1,136 @@
-# Boss直聘数据爬取及数据可视化分析
+# BOSS直聘招聘数据抓取与分析
 
-## 1.数据的抓取
+一个基于 Python、Pyppeteer 和 pandas 的 BOSS直聘招聘数据采集与分析项目。脚本按城市和职位关键词抓取公开职位卡片，导出 Excel，便于继续用 pandas 或 FineBI 做清洗和可视化。
 
-![](https://s2.loli.net/2023/05/08/6pMQDGP2u9ey4Rl.png)
+> 这是一个三年前的个人项目。BOSS直聘页面结构和安全策略会变化，脚本会明确提示安全验证，不会自动绕过验证。请遵守目标网站的服务条款，控制请求频率，不要采集或传播不必要的个人信息。
 
-采用的pyppeteer框架，对boss直聘上各大热门城市招聘信息，进行抓取，保存在excel中。
+## 功能
 
-```python3
-import asyncio, random
-from pyppeteer import launch
-from lxml import etree
-import pandas as pd
-import requests
-import openpyxl
+- 使用浏览器打开 BOSS直聘城市页面并搜索职位关键词。
+- 兼容旧版 `job-list-box` 和当前常见职位卡片结构。
+- 将职位、薪酬、公司、地区、经验、学历、福利、技能标签导出为 Excel。
+- 合并目录中的多个 Excel 工作簿和工作表，并自动处理不同表头。
+- 对页面改版、空数据、路径错误和安全验证给出明确错误。
 
+## 文件说明
 
-class ss_xz(object):
-    def __init__(self):
-        self.data_list = list()
+| 文件 | 作用 |
+| --- | --- |
+| `p.py` | BOSS直聘职位抓取 CLI |
+| `q.py` | Excel 工作簿合并 CLI |
+| `requirements.txt` | Python 依赖 |
+| `environment.yml` | Conda 环境定义 |
+| `tests/` | 解析和 Excel 合并回归测试 |
+| `*.xlsx` | 历史抓取结果和分析数据，不是实时数据 |
 
-    def screen_size(self):
-        """使用tkinter获取屏幕大小"""
-        import tkinter
-        tk = tkinter.Tk()
-        width = tk.winfo_screenwidth()
-        height = tk.winfo_screenheight()
-        tk.quit()
-        return width, height
+## 安装
 
-    # width, height = 1366, 768
-    async def main(self):
-        try:
-            browser = await launch(headless=False,userDataDir="C:/Users/86150/Desktop/py配置文件",
-                                   args=['--disable-infobars', '--window-size=1366,768', '--no-sandbox'])
+推荐使用 Python 3.11 的 Conda 环境：
 
-            page = await browser.newPage()
-            width, height = self.screen_size()
-            await page.setViewport({'width': width, 'height': height})
-            await page.goto(
-                'https://www.zhipin.com/fuzhou/?ka=city-sites-101230100')
-            await page.evaluateOnNewDocument(
-                '''() =>{ Object.defineProperties(navigator, { webdriver: { get: () => false } }) }''')
-            await asyncio.sleep(5)
-            # 查询数据分析岗位
-            await page.type(
-                '#wrap > div.column-search-panel > div > div > div.search-form > form > div.search-form-con > p > input',
-                '测试工程师', {'delay': self.input_time_random() - 50})
-            await asyncio.sleep(2)
-            # 点击搜索
-            await page.click('#wrap > div.column-search-panel > div > div > div.search-form > form > button')
-            await asyncio.sleep(5)
-
-
-            # print(await page.content())
-            # 获取页面内容
-            i = 0
-            while True:
-                await asyncio.sleep(2)
-                content = await page.content()
-                html = etree.HTML(content)
-                # 解析内容
-                self.parse_html(html)
-                # 翻页
-                await page.click('#wrap > div.page-job-wrapper > div.page-job-inner > div > div.job-list-wrapper > div.search-job-result > div > div > div > a:nth-child(10)')
-                await asyncio.sleep(3)
-                i += 1
-                print(i)
-                # boss直聘限制翻页为10页，分省分批次抓取
-                if i >= 10:
-                    break
-            df = pd.DataFrame(self.data_list)
-            # df['职位'] = df.职位.str.extract(r'[(.*?)]', expand=True)
-            df.to_excel('C:/Users/86150/Desktop/测试工程师-福州.xlsx', index=False)
-            print(df)
-
-        except Exception as a:
-            print(a)
-
-
-    def input_time_random(self):
-        return random.randint(100, 151)
-
-    def parse_html(self, html):
-
-        li_list = html.xpath('//div[@class="search-job-result"]//ul[@class="job-list-box"]/li')
-        data_df = []
-        for li in li_list:
-            # 获取文本
-            items = {}
-            items['职位'] = li.xpath('.//span[@class="job-name"]/text()')[0]
-            items['薪酬'] = li.xpath('.//div[@class="job-info clearfix"]/span/text()')[0]
-            items['公司名称'] = li.xpath('.//div[@class="company-info"]//h3/a/text()')[0]
-            items['工作经验'] = li.xpath('.//div[@class="job-info clearfix"]/ul/li/text()')[0]
-            items['学历要求'] = li.xpath('.//div[@class="job-info clearfix"]/ul/li/text()')[1]
-            items['地区'] = li.xpath('.//span[@class="job-area"]/text()')[0]
-            items['福利'] = li.xpath('.//div[@class="info-desc"]/text()')
-            span_list = li.xpath('.//div[@class="job-card-footer clearfix"]/ul[@class="tag-list"]')
-            for span in span_list:
-                items['技能要求'] = span.xpath('./li/text()')
-            ul_list = li.xpath('.//ul[@class="company-tag-list"]')
-            for ul in ul_list:
-                items['公司类型及规模'] = ul.xpath('./li/text()')
-            xl_list = li.xpath('.//div[@class="job-info clearfix"]/ul[@class="company-tag-list"]')
-            for xl in xl_list:
-                items['工作经验及学历要求'] = xl.xpath('./li/text()')
-            self.data_list.append(items)
-
-
-    def run(self):
-        asyncio.get_event_loop().run_until_complete(self.main())
-
-
-if __name__ == '__main__':
-
-    comment = ss_xz()
-    comment.run()
+```bash
+conda env create -f environment.yml
+conda activate bosszhipin_spider
 ```
 
-由于boss直聘限制翻页为10页，所以总共爬取了5100条信息用于分析，主要抓取的信息为职位，薪酬，地区，公司名称，公司类型，公司规模，福利及经验学历要求和技能要求。
+也可以在已有 Conda 环境中安装：
 
-![](https://s2.loli.net/2023/05/08/RZ9fYAhXxMOQDk5.png)
-
-
-
-## 2.数据的清洗
-
-从上面爬取的数据我们可以看到有很多垃圾数据，用pandas经过正则匹配，清洗后的数据如下图：
-
-![](https://s2.loli.net/2023/05/08/92kvIWJEjpARizD.png)
-
-
-
-## 3.可视化分析
-
-本次使用帆软的FineBi进行数据可视化分析。将数据导入后如下图：
-
-![](https://s2.loli.net/2023/05/08/jguZSs5YdrKbFel.png)
-
-创建组件，来进行第一个分析：
-
-1.发布岗位的地区分布图，主要为以下几个省的城市分岗位招聘信息，因为爬虫爬的数据有限，每个城市的岗位招聘信息大概290条左右：
-
-![](https://s2.loli.net/2023/05/08/BQp92eOAfdaoJu4.png)
-
-2.首先从公司类型的维度上进行分析，制作的职位数量与公司类型饼图如下，可以看出数据分析师岗位主要集中在互联网行业，电子商务以及教育和医疗行业。
-
-![](https://s2.loli.net/2023/05/08/szvx2k74AZrLyUN.png)
-
-3.从学历要求维度上分析，画出一下的饼图，可以看出数据分析师的岗位对学历的要求都是大专起步，本科占据了64.77%，硕士占比比较低。
-
-![](https://s2.loli.net/2023/05/08/Nj3A5ibCkwBpZn7.png)
-
-4.从工作年限要求来看，岗位主要分布在应届和3-5年经验，经验不限的占据大半这对应届生来说也是好消息。
-
-![](https://s2.loli.net/2023/05/08/63Qnr42FptiR5lE.png)
-
-5.从薪酬维度分析，可以从条形图看出10-15K的岗位占大部分，出现这种情况的原因大概两种，一种就是样本的数量太少了，刚好爬取的10-15k的岗位占据大多数，另一种一线城市的岗位薪资占据了大部分数据，不过不影响我们数据的展现。
-
-![](https://s2.loli.net/2023/05/08/YsZG4UPiep3dJHL.png)
-
-6.使用FineBi完成的整体仪表板图，如下：
-
-![](https://s2.loli.net/2023/05/08/j5oExDfpqRZCPOT.png)
-
-全部地区的岗位一览图
-
-我们可以按照对应的省与城市进行联动，将数据细分到对应的省以及省下面的市区，由于爬取数量有限，都是几个热门城市的boss直聘网站的前10页信息，所以我们先从北上广深看看实时数据：
-
-1.北京市数据
-
-将鼠标点击左上角地图的北京市，就可以在整个仪表板页面显示北京的所有招聘信息，如下图：
-
-![](https://s2.loli.net/2023/05/08/bfMcygFinr1SKCw.png)
-
-从仪表板看数据一目了然，一线城市北京对数据分析师的学历要求90%都要求本科学历，工作经验50%的要求3-5年，薪资分布也是在10-15K以上。
-
-我们在界面上依次点击学历要求为本科，工作经验为1-3年，然后数据就可以看到我们在北京市，学历要求为本科，工作经验为1-3年的数据。
-
-北京市-本科学历-工作经验1-3年
-
-基本在一线城市，起薪都是10K起步，还是很有吸引力的。
-
-2.上海市的数据
-
-同样将鼠标点击左上角地图的上海市，就可以显示上海市的情况了：
-
-![](https://s2.loli.net/2023/05/08/gncHXTL9iBQY5pO.png)
-
-3.广州市
-
-![](https://s2.loli.net/2023/05/08/OlVmRUgqWho2DuB.png)
-
-我们可以清晰的看出，一线城市相同岗位，学历要求有一定差别的，薪资差不多相同。
-
-接下来看看新一线城市：
-
-4.成都
-
-![](https://s2.loli.net/2023/05/08/CrIbAyZNUxwSMoX.png)
-
-5.武汉
-
-![](https://s2.loli.net/2023/05/08/hBkNTyJIU7sjgtb.png)
-
-6.杭州
-
-![](https://s2.loli.net/2023/05/08/ETZ1cbwJyPjNl3q.png)
-
-从上图仪表板我们可以看到，非一线城市薪资相对北上广有了很大幅度的降低，5-10K的岗位比较多，对学历的要求也更低，这可能是数据分析师这个行业也算最近几年火起来的行业，在一线城市的岗位毕竟多，机会也多，新一线城市未来几年的发展会更大的偏向。
-
-
-
-## 4.技能要求词云图展示
-
-我们上面唯一漏掉的数据就是技能要求的分析，可以用pandas将技能要求数据处理成一条一条的，然后用value_counts()函数计算每个词出现的频率。
-
-附上词云图代码，当然你也可以FineBi绘制词云图：
-
-```text
-import pandas as pd
-import numpy as np
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-from PIL import Image
-
-def deal_excel():
-    image = Image.open('C:/Users/Desktop/查找资料/2.jpg')  # 作为背景轮廓图
-    graph = np.array(image)
-    # 参数分别是指定字体、背景颜色、最大的词的大小、使用给定图作为背景形状
-    wc = WordCloud(font_path='C:\Windows\Fonts\simsun.ttc', background_color='white', max_words=300, mask=graph)
-    df = pd.read_excel('C:/Users/Desktop/职位数据呀呀.xlsx', sheet_name='Sheet2')
-    df = df.loc[:, '技能要求'].value_counts()
-    # print(df.head())
-    # 将df转化成dataframe
-    df = pd.DataFrame(df.reset_index())
-    df.columns = ['技能要求', '数量']
-    # 词
-    name = list(df.技能要求)
-    # 词的频率
-    value = df.数量
-    for i in range(len(name)):
-        name[i] = str(name[i])
-    # 词频以字典形式存储
-    dic = dict(zip(name, value))
-    # 根据给定词频生成词云
-    wc.generate_from_frequencies(dic)
-    plt.imshow(wc)
-    # 不显示坐标轴
-    plt.axis("off")
-    plt.show()
-    wc.to_file('词云图.png')  # 图片命名
-    # 获取前10销量
-    df = df.nlargest(10, '数量')
-    print(df)
-
-
-if __name__ == '__main__':
-    deal_excel()
+```bash
+conda activate bosszhipin_spider
+python -m pip install -r requirements.txt
 ```
+
+Pyppeteer 需要 Chrome 或 Chromium。脚本会自动寻找常见安装路径，也可以显式传入路径。例如 macOS：
+
+```bash
+--chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```
+
+## 抓取职位
+
+先用一页做小规模验证：
+
+```bash
+python p.py \
+  --city fuzhou \
+  --city-code 101230100 \
+  --keyword "测试工程师" \
+  --output output/jobs.xlsx \
+  --max-pages 1 \
+  --chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```
+
+常用参数：
+
+- `--city`：城市 URL slug，例如 `fuzhou`。
+- `--city-code`：城市编码，例如福州 `101230100`。
+- `--keyword`：职位或公司关键词。
+- `--output`：Excel 输出路径。
+- `--max-pages`：最多抓取页数，默认 10。
+- `--headful`：显示浏览器窗口，适合首次运行或需要人工观察时使用。
+- `--user-data-dir`：指定浏览器用户目录，以便在同一会话中保留人工验证结果。
+- `--wait-for-verification`：与 `--headful` 一起使用，等待手动完成安全验证。
+
+如果 BOSS直聘返回“安全验证”或提示当前 IP 存在异常访问，程序会退出并说明原因。可以在可视浏览器中重试：
+
+```bash
+python p.py --headful --wait-for-verification \
+  --user-data-dir .browser-profile \
+  --city fuzhou --city-code 101230100 \
+  --keyword "测试工程师" --output output/jobs.xlsx --max-pages 1
+```
+
+## 合并 Excel
+
+将一个目录下的工作簿和工作表合并为一个文件：
+
+```bash
+python q.py --input-dir . --output output/merged.xlsx
+```
+
+输出文件会自动从输入列表中排除，避免重复合并。合并后的字段包括：
+
+`职位`、`薪酬`、`公司名称`、`工作经验`、`学历要求`、`地区`、`福利`、`技能要求`、`公司类型及规模`。
+
+## 测试
+
+```bash
+python -m unittest discover -s tests -v
+python p.py --help
+python q.py --help
+```
+
+## 历史分析
+
+项目最初使用抓取结果做了岗位地区、公司类型、学历、经验和薪酬分析，并在 FineBI 中制作仪表板。下面保留部分历史截图，截图中的数据不是实时数据。
+
+![抓取结果](https://s2.loli.net/2023/05/08/6pMQDGP2u9ey4Rl.png)
+
+![数据清洗](https://s2.loli.net/2023/05/08/92kvIWJEjpARizD.png)
+
+![FineBI 仪表板](https://s2.loli.net/2023/05/08/j5oExDfpqRZCPOT.png)
+
+![岗位地区分布](https://s2.loli.net/2023/05/08/BQp92eOAfdaoJu4.png)
+
+![公司类型分析](https://s2.loli.net/2023/05/08/szvx2k74AZrLyUN.png)
+
+![学历要求分析](https://s2.loli.net/2023/05/08/Nj3A5ibCkwBpZn7.png)
+
+![工作经验分析](https://s2.loli.net/2023/05/08/63Qnr42FptiR5lE.png)
+
+![薪酬分析](https://s2.loli.net/2023/05/08/YsZG4UPiep3dJHL.png)
+
+![北京数据](https://s2.loli.net/2023/05/08/bfMcygFinr1SKCw.png)
+
+![上海数据](https://s2.loli.net/2023/05/08/gncHXTL9iBQY5pO.png)
+
+![广州数据](https://s2.loli.net/2023/05/08/OlVmRUgqWho2DuB.png)
+
+![成都数据](https://s2.loli.net/2023/05/08/CrIbAyZNUxwSMoX.png)
+
+![武汉数据](https://s2.loli.net/2023/05/08/hBkNTyJIU7sjgtb.png)
+
+![杭州数据](https://s2.loli.net/2023/05/08/ETZ1cbwJyPjNl3q.png)
+
+## Issue 与联系
+
+仓库 Issue 是最合适的公开交流渠道。源码和运行说明都在本仓库中，提问时请附上操作系统、Python/Conda 版本、完整错误信息和脱敏后的页面状态，不要提交账号、Cookie 或验证码信息。
